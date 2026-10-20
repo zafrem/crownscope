@@ -62,6 +62,9 @@ def _validate_embed_sim(o: dict | None) -> None:
         raise PackError("options.embed_sim.mix needs non-negative values that are not all zero")
 
 
+LM_SIGNALS = ("ppl", "burst", "fast_detect")  # signals scored by a causal language model; they share one
+
+
 def _validate_ppl(o: dict | None) -> None:
     if not o:
         raise PackError("ppl is enabled but options.ppl is missing")
@@ -77,6 +80,36 @@ def _validate_ppl(o: dict | None) -> None:
         raise PackError("options.ppl.perplexity needs positive, different `human` and `machine` values")
 
 
+def _shared_model(name: str, o: dict, owner: str | None, opts: dict) -> None:
+    """Signals scored by a language model share one: the first enabled of LM_SIGNALS owns it (and must name it)."""
+    if owner is None:
+        if not (o.get("model") or {}).get("name"):
+            raise PackError(f"options.{name}.model.name is empty: name a causal language model (or a local directory)")
+    elif o.get("model") and o["model"].get("name") != opts[owner]["model"].get("name"):
+        raise PackError(f"options.{name}.model and options.{owner}.model name different models; a detector loads one "
+                        f"scoring model (leave {name}.model out to use {owner}'s)")
+
+
+def _lm_owner(name: str, data: dict) -> str | None:
+    earlier = LM_SIGNALS[:LM_SIGNALS.index(name)]
+    return next((s for s in earlier if s in data["signals"]), None)
+
+
+def _validate_fast_detect(data: dict) -> None:
+    o = data.get("options", {}).get("fast_detect")
+    if not o:
+        raise PackError("fast_detect is enabled but options.fast_detect is missing")
+    need = ("max_tokens", "max_chunks", "min_tokens", "criterion", "full_confidence_tokens", "max_confidence")
+    if missing := [k for k in need if k not in o]:
+        raise PackError(f"options.fast_detect missing: {', '.join(missing)}")
+    _shared_model("fast_detect", o, _lm_owner("fast_detect", data), data["options"])
+    if o["max_tokens"] < 8 or o["max_chunks"] < 1 or o["min_tokens"] < 2:
+        raise PackError("options.fast_detect needs max_tokens >= 8, max_chunks >= 1 and min_tokens >= 2")
+    ref = o["criterion"]
+    if "human" not in ref or "machine" not in ref or ref["human"] == ref["machine"]:
+        raise PackError("options.fast_detect.criterion needs different `human` and `machine` values")
+
+
 def _validate_burst(o: dict | None, ppl: dict | None) -> None:
     if not o:
         raise PackError("burst is enabled but options.burst is missing")
@@ -84,12 +117,7 @@ def _validate_burst(o: dict | None, ppl: dict | None) -> None:
             "full_confidence_sentences", "max_confidence")
     if missing := [k for k in need if k not in o]:
         raise PackError(f"options.burst missing: {', '.join(missing)}")
-    if ppl is None:
-        if not (o.get("model") or {}).get("name"):
-            raise PackError("options.burst.model.name is empty: name a causal language model (or a local directory)")
-    elif o.get("model") and o["model"].get("name") != ppl["model"].get("name"):
-        raise PackError("options.burst.model and options.ppl.model name different models; a detector loads one "
-                        "scoring model (leave burst.model out to use ppl's)")
+    _shared_model("burst", o, "ppl" if ppl is not None else None, {"ppl": ppl})
     if o["max_tokens"] < 8 or o["max_chunks"] < 1:
         raise PackError("options.burst needs max_tokens >= 8 and max_chunks >= 1")
     if o["min_sentences"] < 2 or o["min_sentence_tokens"] < 2:
@@ -153,6 +181,8 @@ def validate(data: dict) -> None:
     if "burst" in data["signals"]:
         opts = data.get("options", {})
         _validate_burst(opts.get("burst"), opts.get("ppl") if "ppl" in data["signals"] else None)
+    if "fast_detect" in data["signals"]:
+        _validate_fast_detect(data)
     if "novelty" in data["signals"]:
         _validate_novelty(data.get("options", {}).get("novelty"), data.get("lists", {}))
         opts = data.get("options", {})

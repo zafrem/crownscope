@@ -3,11 +3,11 @@
 # embed_sim also needs a model name in options.embed_sim.model.name (a sentence-transformers model, or a local directory
 # when there is no network). novelty works without a model; set options.novelty.semantic.enabled and a model name to
 # also count paraphrased sentences as reused.
-# burst is disabled too and needs the same model as ppl (burst reuses ppl's scoring when both are on).
+# burst and fast_detect are disabled too and use the same model as ppl (one scoring pass is shared when several are on).
 # ppl is disabled: add it to `signals` and to each band of `weights`, and name a causal language model in
 # options.ppl.model.name. Its perplexity references depend on the model and the language: fit them.
 name: shopping
-version: 0.0.11
+version: 0.0.12
 domain: shopping
 min_length: 500
 signals:
@@ -200,6 +200,20 @@ options:
       machine: 0.4
     full_confidence_sentences: 20
     max_confidence: 0.6
+  fast_detect:
+    # the model is ppl's (or burst's) when one of them is enabled; otherwise name one here
+    model:
+      provider: transformers
+      name: ''
+      local_only: false
+    max_tokens: 512
+    max_chunks: 4
+    min_tokens: 50
+    criterion:  # (logprob - expected) / sd; placeholders: fit per model
+      human: 0.0
+      machine: 2.0
+    full_confidence_tokens: 400
+    max_confidence: 0.7
 window:
   count: 500
   hours: 24

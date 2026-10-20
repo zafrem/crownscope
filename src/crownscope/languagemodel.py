@@ -1,8 +1,10 @@
-"""Scoring language models for the model-probability signals (SRS FR-3.6 `ppl`, FR-3.7 `burst`).
+"""Scoring language models for the model-probability signals (SRS FR-3.6 `ppl`, FR-3.7 `burst`, FR-3.8 `fast_detect`).
 
 A `LanguageModel` is anything with `name`, `version` and `token_logprobs(text, max_tokens, max_chunks)`, which
 returns the natural-log probability of each scored token given the tokens before it. `burst` also needs
-`scored_tokens(...)`, the same with each token's (char_start, char_end) in the text, to group tokens by sentence. A pack names a provider and
+`scored_tokens(...)`, the same with each token's (char_start, char_end) in the text, to group tokens by sentence. `fast_detect` needs
+`token_curvature(...)`: per token the log-probability, its expected value and its variance under the model's own
+next-token distribution. A pack names a provider and
 a model (a Hugging Face model name or, for an install with no network, a local directory); code may also pass a
 model to `Detector(pack, language_model=...)`. Nothing is loaded unless a pack enables a signal that needs one,
 and a model that cannot be loaded makes the signal `unavailable` with the reason (FR-3.12), never a crash.
@@ -22,10 +24,13 @@ class LanguageModel(Protocol):
 
     def token_logprobs(self, text: str, max_tokens: int, max_chunks: int) -> list[float]: ...
 
+    # optional: scored_tokens(...) for burst and token_curvature(...) for fast_detect, described above
+
 
 class TransformersLM:
     """A Hugging Face causal language model (the `model` extra: transformers and torch)."""
 
+    ROWS = 32  # positions whose full next-token distribution is held at once
     CHARS_PER_TOKEN_CAP = 8  # text beyond max_tokens * max_chunks * this is never tokenized
 
     def __init__(self, name: str, local_only: bool = False, device: str | None = None, dtype: str | None = None):
@@ -48,15 +53,25 @@ class TransformersLM:
         self.version = f"transformers {transformers.__version__}, torch {torch.__version__}"
         self.bos_id = self.tokenizer.bos_token_id
         self.context = getattr(self.model.config, "max_position_embeddings", None)
+        self._last = None
 
-    def _score(self, text: str, max_tokens: int, max_chunks: int, offsets: bool) -> list[tuple]:
-        """(char_start, char_end, logprob) per scored token; the offsets are None unless asked for."""
+    def _score(self, text: str, max_tokens: int, max_chunks: int) -> list[tuple]:
+        """(char_start, char_end, logprob, expected logprob, variance of logprob) per scored token.
+
+        The expected value and variance are over the model's own next-token distribution (what `fast_detect`
+        needs). The spans are None for a slow tokenizer. The last result is kept, so `ppl`, `burst` and
+        `fast_detect` on one document cost one forward pass.
+        """
+        key = (text, max_tokens, max_chunks, self.bos_id, self.context)
+        if self._last and self._last[0] == key:
+            return self._last[1]
         torch = self._torch
         limit = min(max_tokens, self.context) if self.context else max_tokens
         room = limit - (1 if self.bos_id is not None else 0)
         text = text[: max_tokens * max_chunks * self.CHARS_PER_TOKEN_CAP]
-        enc = self.tokenizer(text, add_special_tokens=False, verbose=False, return_offsets_mapping=offsets)
-        ids, spans = enc["input_ids"], (enc["offset_mapping"] if offsets else None)
+        fast = getattr(self.tokenizer, "is_fast", False)
+        enc = self.tokenizer(text, add_special_tokens=False, verbose=False, return_offsets_mapping=fast)
+        ids, spans = enc["input_ids"], (enc["offset_mapping"] if fast else None)
         out: list[tuple] = []
         for c in range(max_chunks):
             chunk = ids[c * room:(c + 1) * room]
@@ -66,20 +81,35 @@ class TransformersLM:
             batch = torch.tensor([seq], device=self.device)
             with torch.no_grad():
                 logits = self.model(batch).logits[0, :-1].float()
-            logprobs = torch.log_softmax(logits, dim=-1).gather(1, batch[0, 1:, None])[:, 0].tolist()
+                lp, mu, var = [], [], []
+                for r in range(0, len(logits), self.ROWS):  # bounded memory: vocabulary-sized rows, a few at a time
+                    logp = torch.log_softmax(logits[r:r + self.ROWS], dim=-1)
+                    p = logp.exp()
+                    m = (p * logp).sum(-1)
+                    lp.append(logp.gather(1, batch[0, 1 + r:1 + r + len(logp), None])[:, 0])
+                    mu.append(m)
+                    var.append(((p * logp * logp).sum(-1) - m * m).clamp(min=0))
+                lp, mu, var = torch.cat(lp), torch.cat(mu), torch.cat(var)
             # without a BOS the chunk's first token has no context and is not scored
-            where = spans[c * room:(c + 1) * room][(0 if self.bos_id is not None else 1):] if offsets else None
-            out += [(*where[i], lp) if offsets else (None, None, lp) for i, lp in enumerate(logprobs)]
+            where = spans[c * room:(c + 1) * room][(0 if self.bos_id is not None else 1):] if fast else None
+            for i, row in enumerate(zip(lp.tolist(), mu.tolist(), var.tolist())):
+                out.append((*(where[i] if where else (None, None)), *row))
+        self._last = (key, out)
         return out
 
     def token_logprobs(self, text: str, max_tokens: int, max_chunks: int) -> list[float]:
-        return [lp for _, _, lp in self._score(text, max_tokens, max_chunks, offsets=False)]
+        return [t[2] for t in self._score(text, max_tokens, max_chunks)]
 
     def scored_tokens(self, text: str, max_tokens: int, max_chunks: int) -> list[tuple[int, int, float]]:
         """Like `token_logprobs`, with each token's character span in `text` (needs a fast tokenizer)."""
-        if not getattr(self.tokenizer, "is_fast", False):
+        out = self._score(text, max_tokens, max_chunks)
+        if out and out[0][0] is None:
             raise RuntimeError("this tokenizer cannot give character offsets (a fast tokenizer is needed)")
-        return self._score(text, max_tokens, max_chunks, offsets=True)
+        return [t[:3] for t in out]
+
+    def token_curvature(self, text: str, max_tokens: int, max_chunks: int) -> list[tuple[float, float, float]]:
+        """(logprob, expected logprob, variance of logprob) per scored token, for `fast_detect`."""
+        return [t[2:] for t in self._score(text, max_tokens, max_chunks)]
 
 
 def load_language_model(spec: dict | None) -> tuple[LanguageModel | None, str | None]:

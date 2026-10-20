@@ -8,7 +8,7 @@ from .extractors import Context
 from .embedding import load_embedder
 from .languagemodel import load_language_model
 from .normalize import normalize
-from .pack import Pack, load_pack
+from .pack import LM_SIGNALS, Pack, load_pack
 from .result import Result, Signal
 
 
@@ -42,11 +42,11 @@ class Detector:
 
     @property
     def language_model(self):
-        """The scoring model for `ppl` and `burst`, loaded on first use and only if the pack enables a signal that needs it."""
+        """The scoring model for `ppl`, `burst` and `fast_detect`, loaded on first use and only if the pack enables a signal that needs it."""
         if not self._lm_resolved:
             self._lm_resolved = True
-            # ppl and burst share one model: ppl's when both are enabled (the pack check requires them to agree)
-            owner = "ppl" if "ppl" in self.pack.signals else "burst" if "burst" in self.pack.signals else None
+            # the model signals share one model: the first enabled of LM_SIGNALS names it (the pack check makes them agree)
+            owner = next((s for s in LM_SIGNALS if s in self.pack.signals), None)
             if owner:
                 self._lm, self._lm_error = load_language_model(self.pack.options.get(owner, {}).get("model"))
         return self._lm
