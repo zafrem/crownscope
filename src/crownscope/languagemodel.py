@@ -36,7 +36,9 @@ class TransformersLM:
         self.tokenizer = AutoTokenizer.from_pretrained(name, **kwargs)
         model_kwargs = dict(kwargs)
         if dtype:
-            model_kwargs["torch_dtype"] = getattr(torch, dtype)
+            # transformers 4.56 renamed `torch_dtype` to `dtype` and warns about the old name from then on
+            major_minor = tuple(int(x) for x in transformers.__version__.split(".")[:2] if x.isdigit())
+            model_kwargs["dtype" if major_minor >= (4, 56) else "torch_dtype"] = getattr(torch, dtype)
         self.model = AutoModelForCausalLM.from_pretrained(name, **model_kwargs).eval()
         if device:
             self.model.to(device)
