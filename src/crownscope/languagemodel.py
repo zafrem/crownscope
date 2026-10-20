@@ -1,7 +1,8 @@
-"""Scoring language models for the model-probability signals (SRS FR-3.6 `ppl`; later `burst` and others).
+"""Scoring language models for the model-probability signals (SRS FR-3.6 `ppl`, FR-3.7 `burst`).
 
 A `LanguageModel` is anything with `name`, `version` and `token_logprobs(text, max_tokens, max_chunks)`, which
-returns the natural-log probability of each scored token given the tokens before it. A pack names a provider and
+returns the natural-log probability of each scored token given the tokens before it. `burst` also needs
+`scored_tokens(...)`, the same with each token's (char_start, char_end) in the text, to group tokens by sentence. A pack names a provider and
 a model (a Hugging Face model name or, for an install with no network, a local directory); code may also pass a
 model to `Detector(pack, language_model=...)`. Nothing is loaded unless a pack enables a signal that needs one,
 and a model that cannot be loaded makes the signal `unavailable` with the reason (FR-3.12), never a crash.
@@ -48,13 +49,15 @@ class TransformersLM:
         self.bos_id = self.tokenizer.bos_token_id
         self.context = getattr(self.model.config, "max_position_embeddings", None)
 
-    def token_logprobs(self, text: str, max_tokens: int, max_chunks: int) -> list[float]:
+    def _score(self, text: str, max_tokens: int, max_chunks: int, offsets: bool) -> list[tuple]:
+        """(char_start, char_end, logprob) per scored token; the offsets are None unless asked for."""
         torch = self._torch
         limit = min(max_tokens, self.context) if self.context else max_tokens
         room = limit - (1 if self.bos_id is not None else 0)
         text = text[: max_tokens * max_chunks * self.CHARS_PER_TOKEN_CAP]
-        ids = self.tokenizer(text, add_special_tokens=False, verbose=False)["input_ids"]
-        out: list[float] = []
+        enc = self.tokenizer(text, add_special_tokens=False, verbose=False, return_offsets_mapping=offsets)
+        ids, spans = enc["input_ids"], (enc["offset_mapping"] if offsets else None)
+        out: list[tuple] = []
         for c in range(max_chunks):
             chunk = ids[c * room:(c + 1) * room]
             seq = ([self.bos_id] if self.bos_id is not None else []) + chunk
@@ -63,9 +66,20 @@ class TransformersLM:
             batch = torch.tensor([seq], device=self.device)
             with torch.no_grad():
                 logits = self.model(batch).logits[0, :-1].float()
-            logprobs = torch.log_softmax(logits, dim=-1)
-            out += logprobs.gather(1, batch[0, 1:, None])[:, 0].tolist()
+            logprobs = torch.log_softmax(logits, dim=-1).gather(1, batch[0, 1:, None])[:, 0].tolist()
+            # without a BOS the chunk's first token has no context and is not scored
+            where = spans[c * room:(c + 1) * room][(0 if self.bos_id is not None else 1):] if offsets else None
+            out += [(*where[i], lp) if offsets else (None, None, lp) for i, lp in enumerate(logprobs)]
         return out
+
+    def token_logprobs(self, text: str, max_tokens: int, max_chunks: int) -> list[float]:
+        return [lp for _, _, lp in self._score(text, max_tokens, max_chunks, offsets=False)]
+
+    def scored_tokens(self, text: str, max_tokens: int, max_chunks: int) -> list[tuple[int, int, float]]:
+        """Like `token_logprobs`, with each token's character span in `text` (needs a fast tokenizer)."""
+        if not getattr(self.tokenizer, "is_fast", False):
+            raise RuntimeError("this tokenizer cannot give character offsets (a fast tokenizer is needed)")
+        return self._score(text, max_tokens, max_chunks, offsets=True)
 
 
 def load_language_model(spec: dict | None) -> tuple[LanguageModel | None, str | None]:

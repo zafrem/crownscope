@@ -63,4 +63,4 @@ def ramp(value: float, lo: float, hi: float) -> float:
     return min(1.0, max(0.0, (value - lo) / (hi - lo)))
 
 
-from . import embed_sim, near_dup, novelty, pattern, ppl, structure, style  # noqa: E402,F401  (register built-ins)
+from . import burst, embed_sim, near_dup, novelty, pattern, ppl, structure, style  # noqa: E402,F401  (register built-ins)

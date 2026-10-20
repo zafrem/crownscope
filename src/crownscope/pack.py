@@ -77,6 +77,28 @@ def _validate_ppl(o: dict | None) -> None:
         raise PackError("options.ppl.perplexity needs positive, different `human` and `machine` values")
 
 
+def _validate_burst(o: dict | None, ppl: dict | None) -> None:
+    if not o:
+        raise PackError("burst is enabled but options.burst is missing")
+    need = ("max_tokens", "max_chunks", "min_sentences", "min_sentence_tokens", "spread",
+            "full_confidence_sentences", "max_confidence")
+    if missing := [k for k in need if k not in o]:
+        raise PackError(f"options.burst missing: {', '.join(missing)}")
+    if ppl is None:
+        if not (o.get("model") or {}).get("name"):
+            raise PackError("options.burst.model.name is empty: name a causal language model (or a local directory)")
+    elif o.get("model") and o["model"].get("name") != ppl["model"].get("name"):
+        raise PackError("options.burst.model and options.ppl.model name different models; a detector loads one "
+                        "scoring model (leave burst.model out to use ppl's)")
+    if o["max_tokens"] < 8 or o["max_chunks"] < 1:
+        raise PackError("options.burst needs max_tokens >= 8 and max_chunks >= 1")
+    if o["min_sentences"] < 2 or o["min_sentence_tokens"] < 2:
+        raise PackError("options.burst needs min_sentences >= 2 and min_sentence_tokens >= 2")
+    ref = o["spread"]
+    if not (ref.get("human", 0) > 0 and ref.get("machine", 0) > 0) or ref["human"] == ref["machine"]:
+        raise PackError("options.burst.spread needs positive, different `human` and `machine` values")
+
+
 def _validate_novelty(o: dict | None, lists: dict) -> None:
     if not o:
         raise PackError("novelty is enabled but options.novelty is missing")
@@ -128,6 +150,9 @@ def validate(data: dict) -> None:
         _validate_embed_sim(data.get("options", {}).get("embed_sim"))
     if "ppl" in data["signals"]:
         _validate_ppl(data.get("options", {}).get("ppl"))
+    if "burst" in data["signals"]:
+        opts = data.get("options", {})
+        _validate_burst(opts.get("burst"), opts.get("ppl") if "ppl" in data["signals"] else None)
     if "novelty" in data["signals"]:
         _validate_novelty(data.get("options", {}).get("novelty"), data.get("lists", {}))
         opts = data.get("options", {})

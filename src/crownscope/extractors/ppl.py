@@ -31,6 +31,18 @@ def score_from_logprobs(logprobs: list[float], options: dict) -> tuple[float, fl
     return score, confidence, perplexity
 
 
+def scored_tokens(ctx, lm, text: str, options: dict) -> list[tuple]:
+    """(char_start, char_end, logprob) per token, scored once per document and shared by `ppl` and `burst`.
+
+    A model without `scored_tokens` still serves `ppl`: the spans are then None.
+    """
+    def score():
+        if hasattr(lm, "scored_tokens"):
+            return lm.scored_tokens(text, options["max_tokens"], options["max_chunks"])
+        return [(None, None, lp) for lp in lm.token_logprobs(text, options["max_tokens"], options["max_chunks"])]
+    return ctx.memo(("lm_tokens", options["max_tokens"], options["max_chunks"]), score)
+
+
 class _Ppl:
     name = "ppl"
     requires_model = True  # so the pipeline skips it below min_length (FR-2.2)
@@ -44,7 +56,7 @@ class _Ppl:
         if lm is None:
             return unavailable(self.name, getattr(ctx, "language_model_error", None) or "no scoring language model available")
         try:
-            logprobs = lm.token_logprobs(text, options["max_tokens"], options["max_chunks"])
+            logprobs = [lp for _, _, lp in scored_tokens(ctx, lm, text, options)]
         except Exception as e:  # a model error must not take the document, or the batch, down (NFR-10)
             return unavailable(self.name, f"scoring failed: {e}")
         if len(logprobs) < options["min_tokens"]:

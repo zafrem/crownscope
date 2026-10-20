@@ -42,11 +42,13 @@ class Detector:
 
     @property
     def language_model(self):
-        """The scoring model for `ppl`, loaded on first use and only if the pack enables a signal that needs it."""
+        """The scoring model for `ppl` and `burst`, loaded on first use and only if the pack enables a signal that needs it."""
         if not self._lm_resolved:
             self._lm_resolved = True
-            if "ppl" in self.pack.signals:
-                self._lm, self._lm_error = load_language_model(self.pack.options.get("ppl", {}).get("model"))
+            # ppl and burst share one model: ppl's when both are enabled (the pack check requires them to agree)
+            owner = "ppl" if "ppl" in self.pack.signals else "burst" if "burst" in self.pack.signals else None
+            if owner:
+                self._lm, self._lm_error = load_language_model(self.pack.options.get(owner, {}).get("model"))
         return self._lm
 
     @property
