@@ -1,0 +1,269 @@
+# Starter pack. Every number and list below is a placeholder to be fitted on labeled data (SRS phase 2).
+# embed_sim and novelty are disabled: to use one, add it to `signals` and to each band of `weights`.
+# embed_sim also needs a model name in options.embed_sim.model.name (a sentence-transformers model, or a local directory
+# when there is no network). novelty works without a model; set options.novelty.semantic.enabled and a model name to
+# also count paraphrased sentences as reused.
+# ppl is disabled: add it to `signals` and to each band of `weights`, and name a causal language model in
+# options.ppl.model.name. Its perplexity references depend on the model and the language: fit them.
+name: blog
+version: 0.0.10
+domain: blog
+min_length: 500
+signals:
+- pattern
+- style
+- near_dup
+- structure
+weights:
+  short:
+    pattern: 0.3
+    style: 0.2
+    near_dup: 0.35
+    structure: 0.15
+  medium:
+    pattern: 0.2
+    style: 0.3
+    near_dup: 0.35
+    structure: 0.15
+  long:
+    pattern: 0.15
+    style: 0.4
+    near_dup: 0.3
+    structure: 0.15
+thresholds:
+  medium: 0.4
+  high: 0.7
+options:
+  pattern:
+    category_weights:
+      url: 0.25
+      contact: 0.35
+      business: 0.2
+      promotional: 0.08
+      disclosure: 0.25
+    per_category_cap: 3
+    confidence:
+      base: 0.5
+      per_category: 0.15
+      max: 0.9
+  style:
+    full_confidence_chars: 1000
+    max_confidence: 0.8
+    evidence_min: 0.6
+    ngram: 3
+    mattr_window: 50
+    features:
+      sentence_repeat:
+        weight: 1.0
+        lo: 0.0
+        hi: 0.3
+      ngram_repeat:
+        weight: 1.0
+        lo: 0.05
+        hi: 0.35
+      lexical_diversity:
+        weight: 1.0
+        lo: 0.85
+        hi: 0.55
+      sentence_length_cv:
+        weight: 0.5
+        lo: 0.6
+        hi: 0.2
+      opening_skew:
+        weight: 0.7
+        lo: 0.2
+        hi: 0.6
+      boilerplate:
+        weight: 1.0
+        lo: 0.0
+        hi: 2.0
+      formatting:
+        weight: 0.5
+        lo: 5.0
+        hi: 30.0
+      concreteness:
+        weight: 1.0
+        lo: 8.0
+        hi: 1.0
+      ending_mix:
+        weight: 0.4
+        lo: 0.0
+        hi: 0.5
+      translationese:
+        weight: 0.4
+        lo: 0.0
+        hi: 4.0
+  near_dup:
+    shingle_size: 5
+    min_chars: 30
+    permutations: 64
+    bands: 16
+    min_similarity: 0.6
+    matches:
+      lo: 0
+      hi: 3
+    max_confidence: 0.9
+    reference_store_size: 50
+    evidence_cap: 5
+  structure:
+    opening_tokens: 2
+    closing_tokens: 2
+    paragraph_bucket: 1
+    repeats:
+      lo: 1
+      hi: 6
+    max_confidence: 0.7
+    reference_store_size: 50
+    evidence_cap: 5
+  embed_sim:
+    model:
+      provider: sentence-transformers
+      name: ''
+    min_chars: 30
+    chunk_chars: 1000
+    max_chunks: 8
+    min_similarity: 0.85
+    lsh:
+      tables: 12
+      bits: 8
+      seed: 0
+    size:
+      lo: 0
+      hi: 3
+    density:
+      lo: 0.85
+      hi: 0.98
+    mix:
+      size: 0.7
+      density: 0.3
+    max_confidence: 0.9
+    reference_store_size: 50
+    evidence_cap: 5
+  novelty:
+    min_unit_chars: 15
+    min_units: 3
+    min_chars: 200
+    full_confidence_chars: 1000
+    reuse:
+      lo: 0.2
+      hi: 0.8
+    facts:
+      rules:
+      - usage_period
+      - number_unit
+      - proper_noun
+      lo: 5.0
+      hi: 0.5
+    mix:
+      reuse: 0.7
+      facts: 0.3
+    max_confidence: 0.9
+    reference_store_size: 50
+    evidence_cap: 5
+    semantic:
+      enabled: false
+      model:
+        provider: sentence-transformers
+        name: ''
+      min_similarity: 0.85
+      max_sentences: 12
+      lsh:
+        tables: 24
+        bits: 12
+        seed: 0
+  ppl:
+    model:
+      provider: transformers
+      name: ''
+      local_only: false
+    max_tokens: 512
+    max_chunks: 4
+    min_tokens: 50
+    perplexity:
+      human: 40.0
+      machine: 8.0
+    full_confidence_tokens: 400
+    max_confidence: 0.8
+window:
+  count: 500
+  hours: 24
+cluster:
+  min_span_hours: 0.05
+baseline:
+  min_population: 5
+  min_docs: 2
+  z_threshold: 3.5
+  mad_floor:
+    rate_per_hour: 0.3
+    clustered_share: 0.05
+    templated_share: 0.05
+lists:
+  patterns:
+  - category: url
+    name: url
+    regex: https?://\S+|www\.\S+
+  - category: contact
+    name: phone_kr
+    regex: \b0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}\b
+  - category: contact
+    name: email
+    regex: '[\w.+-]+@[\w-]+\.[\w.-]+'
+  - category: contact
+    name: messenger
+    regex: (?:카톡|카카오톡|오픈채팅|텔레그램)\s*(?:ID|아이디|문의)?
+  businesses: []
+  promotional:
+  - 최저가
+  - 할인
+  - 구매링크
+  - 구매 링크
+  - 지금 바로
+  - 클릭
+  - 이벤트
+  - 무료배송
+  - 쿠폰
+  - 특가
+  disclosure:
+  - 소정의 원고료
+  - 광고를 포함
+  - 협찬
+  - 제공받아
+  - 체험단
+  - 파트너스 활동
+  - 수수료를 지급
+  - 유료 광고
+  boilerplate:
+    opening:
+    - 안녕하세요
+    - 알아보겠습니다
+    - 소개해 드리겠습니다
+    - 알아보도록 하겠습니다
+    closing:
+    - 도움이 되셨으면 좋겠습니다
+    - 도움이 되었으면 좋겠습니다
+    - 감사합니다
+    - 참고하시기 바랍니다
+    - 구독과 좋아요
+  endings:
+    formal: (?:습니다|입니다|습니까|십시오|니다)$
+    polite: (?:해요|에요|예요|죠|네요|어요|아요|세요|군요)$
+    plain: (?:다|이다|한다|했다|였다)$
+  concrete:
+  - name: usage_period
+    regex: \d+\s*(?:개월|주일|주간|일째|년째|달째|일 동안|주 동안|개월 동안)
+  - name: number_unit
+    regex: \d+(?:[.,]\d+)?\s*(?:cm|mm|kg|g|ml|mL|L|원|%|개|인치|mAh|W|GB)
+  - name: comparison
+    regex: (?:보다|비교하면|비해|대비|기존 제품)
+  - name: drawback
+    regex: (?:아쉬|단점|불편|별로|아쉽|흠이|문제는)
+  - name: proper_noun
+    regex: \b[A-Z][a-z]+\b|\b[A-Z0-9]{2,}\b
+  translationese:
+  - 에 의해
+  - 것으로 보여집니다
+  - 에 대해서는
+  - 에 있어서
+  - 를 통해서
+  - 하는 것이 가능합니다
+  - 라고 할 수 있습니다
