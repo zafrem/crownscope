@@ -3,11 +3,12 @@
 # embed_sim also needs a model name in options.embed_sim.model.name (a sentence-transformers model, or a local directory
 # when there is no network). novelty works without a model; set options.novelty.semantic.enabled and a model name to
 # also count paraphrased sentences as reused.
-# burst and fast_detect are disabled too and use the same model as ppl (one scoring pass is shared when several are on).
+# burst, fast_detect and binoculars are disabled too and use the same model as ppl (one scoring pass is shared when
+# several are on). binoculars also needs a second model, options.binoculars.performer, with the same tokenizer.
 # ppl is disabled: add it to `signals` and to each band of `weights`, and name a causal language model in
 # options.ppl.model.name. Its perplexity references depend on the model and the language: fit them.
 name: blog
-version: 0.0.12
+version: 0.0.13
 domain: blog
 min_length: 500
 signals:
@@ -212,6 +213,25 @@ options:
     criterion:  # (logprob - expected) / sd; placeholders: fit per model
       human: 0.0
       machine: 2.0
+    full_confidence_tokens: 400
+    max_confidence: 0.7
+  binoculars:
+    # the observer is the shared model (ppl's, burst's or fast_detect's when one is enabled); otherwise name it here
+    model:
+      provider: transformers
+      name: ''
+      local_only: false
+    # the performer must share the observer's tokenizer (the paper pairs a base model with its instruct sibling)
+    performer:
+      provider: transformers
+      name: ''
+      local_only: false
+    max_tokens: 512
+    max_chunks: 4
+    min_tokens: 50
+    ratio:  # performer log-perplexity / cross-perplexity; lower is more machine-like. Placeholders: fit per pair
+      human: 1.0
+      machine: 0.8
     full_confidence_tokens: 400
     max_confidence: 0.7
 window:

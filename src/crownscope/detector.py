@@ -27,6 +27,9 @@ class Detector:
         self._lm = language_model
         self._lm_error = None
         self._lm_resolved = language_model is not None
+        self._performer = None
+        self._performer_error = None
+        self._performer_resolved = False
 
     def _resolve_embedder(self) -> None:
         if not self._embedder_resolved:
@@ -42,7 +45,7 @@ class Detector:
 
     @property
     def language_model(self):
-        """The scoring model for `ppl`, `burst` and `fast_detect`, loaded on first use and only if the pack enables a signal that needs it."""
+        """The scoring model for `ppl`, `burst`, `fast_detect` and `binoculars` (the observer), loaded on first use and only if the pack enables a signal that needs it."""
         if not self._lm_resolved:
             self._lm_resolved = True
             # the model signals share one model: the first enabled of LM_SIGNALS names it (the pack check makes them agree)
@@ -50,6 +53,21 @@ class Detector:
             if owner:
                 self._lm, self._lm_error = load_language_model(self.pack.options.get(owner, {}).get("model"))
         return self._lm
+
+    @property
+    def performer(self):
+        """The second model for `binoculars` (options.binoculars.performer), loaded on first use."""
+        if not self._performer_resolved:
+            self._performer_resolved = True
+            if "binoculars" in self.pack.signals:
+                self._performer, self._performer_error = load_language_model(
+                    self.pack.options.get("binoculars", {}).get("performer"))
+        return self._performer
+
+    @property
+    def performer_error(self) -> str | None:
+        self.performer
+        return self._performer_error
 
     @property
     def language_model_error(self) -> str | None:
@@ -69,7 +87,8 @@ class Detector:
     def analyze(self, text: str, meta: dict | None = None) -> Result:
         """Single Mode: stateless, no relational signals (FR-4.1). Model signals (ppl) run here."""
         return self._analyze(text, meta, ctx=Context(language_model=self.language_model,
-                                                     language_model_error=self.language_model_error))
+                                                     language_model_error=self.language_model_error,
+                                                     performer=self.performer, performer_error=self.performer_error))
 
     def session(self, window: dict | None = None, hash_only: bool = False):
         """Open Cumulative Mode. `window` overrides the pack's {count, hours} (FR-5.3);

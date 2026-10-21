@@ -73,7 +73,8 @@ class Session:
 
         ctx = Context(store=self.store, doc_id=doc_id, meta=meta, embedder=self.detector.embedder,
                       embedder_error=self.detector.embedder_error, language_model=self.detector.language_model,
-                      language_model_error=self.detector.language_model_error)
+                      language_model_error=self.detector.language_model_error, performer=self.detector.performer,
+                      performer_error=self.detector.performer_error)
         result = self.detector._analyze(doc, meta, ctx)
 
         opts = self.detector.pack.options

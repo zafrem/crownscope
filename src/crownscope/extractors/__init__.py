@@ -25,6 +25,8 @@ class Context:
     embedder_error: str | None = None  # why there is none
     language_model: object = None  # scoring language model for ppl, None if not configured or not loadable
     language_model_error: str | None = None  # why there is none
+    performer: object = None  # second language model for binoculars, None if not configured or not loadable
+    performer_error: str | None = None  # why there is none
 
     def memo(self, key: str, fn: Callable):
         """Compute a value once per document (fingerprints are shared between extractor and session)."""
@@ -63,4 +65,4 @@ def ramp(value: float, lo: float, hi: float) -> float:
     return min(1.0, max(0.0, (value - lo) / (hi - lo)))
 
 
-from . import burst, embed_sim, fast_detect, near_dup, novelty, pattern, ppl, structure, style  # noqa: E402,F401  (register built-ins)
+from . import binoculars, burst, embed_sim, fast_detect, near_dup, novelty, pattern, ppl, structure, style  # noqa: E402,F401  (register built-ins)

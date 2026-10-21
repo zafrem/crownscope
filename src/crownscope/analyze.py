@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from .detector import Detector
-from .pack import PackError
+from .pack import LM_SIGNALS, PackError
 from .persist import SessionFileError
 from .store import parse_timestamp
 
@@ -117,8 +117,11 @@ def read_documents(args, extra: tuple = ()) -> list[dict]:
 # ---------------------------------------------------------------- scoring
 
 def _warn_missing_language_model(detector: Detector) -> None:
-    if "ppl" in detector.pack.signals and detector.language_model is None:
-        print(f"warning: ppl is unavailable: {detector.language_model_error}", file=sys.stderr)
+    for name in LM_SIGNALS:
+        if name in detector.pack.signals and detector.language_model is None:
+            print(f"warning: {name} is unavailable: {detector.language_model_error}", file=sys.stderr)
+    if "binoculars" in detector.pack.signals and detector.performer is None:
+        print(f"warning: binoculars is unavailable: {detector.performer_error}", file=sys.stderr)
 
 
 def _score_single(detector: Detector, docs: list[dict]) -> dict:

@@ -62,7 +62,7 @@ def _validate_embed_sim(o: dict | None) -> None:
         raise PackError("options.embed_sim.mix needs non-negative values that are not all zero")
 
 
-LM_SIGNALS = ("ppl", "burst", "fast_detect")  # signals scored by a causal language model; they share one
+LM_SIGNALS = ("ppl", "burst", "fast_detect", "binoculars")  # signals scored by a causal language model; they share one
 
 
 def _validate_ppl(o: dict | None) -> None:
@@ -93,6 +93,29 @@ def _shared_model(name: str, o: dict, owner: str | None, opts: dict) -> None:
 def _lm_owner(name: str, data: dict) -> str | None:
     earlier = LM_SIGNALS[:LM_SIGNALS.index(name)]
     return next((s for s in earlier if s in data["signals"]), None)
+
+
+def _validate_binoculars(data: dict) -> None:
+    o = data.get("options", {}).get("binoculars")
+    if not o:
+        raise PackError("binoculars is enabled but options.binoculars is missing")
+    need = ("performer", "max_tokens", "max_chunks", "min_tokens", "ratio", "full_confidence_tokens", "max_confidence")
+    if missing := [k for k in need if k not in o]:
+        raise PackError(f"options.binoculars missing: {', '.join(missing)}")
+    owner = _lm_owner("binoculars", data)
+    _shared_model("binoculars", o, owner, data["options"])
+    if not o["performer"].get("name"):
+        raise PackError("options.binoculars.performer.name is empty: name the second causal language model "
+                        "(or a local directory); it must share the observer's tokenizer")
+    observer = (data["options"][owner] if owner else o)["model"]["name"]
+    if o["performer"]["name"] == observer:
+        raise PackError("options.binoculars.performer is the same model as the observer; binoculars needs two "
+                        "different models (the paper pairs a base model with its instruction-tuned sibling)")
+    if o["max_tokens"] < 8 or o["max_chunks"] < 1 or o["min_tokens"] < 2:
+        raise PackError("options.binoculars needs max_tokens >= 8, max_chunks >= 1 and min_tokens >= 2")
+    ref = o["ratio"]
+    if not (ref.get("human", 0) > 0 and ref.get("machine", 0) > 0) or ref["human"] == ref["machine"]:
+        raise PackError("options.binoculars.ratio needs positive, different `human` and `machine` values")
 
 
 def _validate_fast_detect(data: dict) -> None:
@@ -183,6 +206,8 @@ def validate(data: dict) -> None:
         _validate_burst(opts.get("burst"), opts.get("ppl") if "ppl" in data["signals"] else None)
     if "fast_detect" in data["signals"]:
         _validate_fast_detect(data)
+    if "binoculars" in data["signals"]:
+        _validate_binoculars(data)
     if "novelty" in data["signals"]:
         _validate_novelty(data.get("options", {}).get("novelty"), data.get("lists", {}))
         opts = data.get("options", {})
