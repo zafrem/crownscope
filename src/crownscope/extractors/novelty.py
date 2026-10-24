@@ -34,7 +34,7 @@ from . import ramp, register, unavailable
 from .pattern import _rx
 
 WORD = re.compile(r"\w+")
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。])\s+|\n+")
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+|(?<=[。！？])(?![」』）)”’\"'])\s*|\n+")
 
 
 def _hash(s: str) -> int:

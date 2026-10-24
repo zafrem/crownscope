@@ -23,7 +23,7 @@ from . import ramp, register, unavailable
 from .pattern import _rx
 
 WORD = re.compile(r"\w+")
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。])\s+|\n+")
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+|(?<=[。！？])(?![」』）)”’\"'])\s*|\n+")
 EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿⭐❤]")
 LIST_LINE = re.compile(r"^\s*(?:[-*•▶●■◆✔✅]|\d+[.)])\s+|^#{1,6}\s", re.M)
 

@@ -16,7 +16,7 @@ from ..result import Evidence, Signal
 from . import ramp, register, unavailable
 
 WORD = re.compile(r"\w+")
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?…。])\s+|\n+")
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+|(?<=[。！？])(?![」』）)”’\"'])\s*|\n+")
 HEADING = re.compile(r"^(?:#{1,6}\s|\*\*[^*]+\*\*$|[■▶●◆]\s)")
 
 

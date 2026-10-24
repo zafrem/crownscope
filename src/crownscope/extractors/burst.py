@@ -28,11 +28,11 @@ from ..result import Evidence, Signal
 from . import ramp, register, unavailable
 from .ppl import scored_tokens
 
-SENTENCE = re.compile(r"[^\n]+?(?:[.!?…。]+(?=\s|$)|(?=\n)|$)")
+SENTENCE = re.compile(r"[^\n]+?(?:[.!?…]+(?=\s|$)|[。！？]+[」』）)”’\"']*|(?=\n)|$)")
 
 
 def sentence_spans(text: str) -> list[tuple[int, int]]:
-    """Character spans of the sentences (split like `style`: after . ! ? … 。 and at line breaks)."""
+    """Character spans of the sentences (split like `style`: after . ! ? … and full-width 。！？ even without a space, and at line breaks)."""
     spans = []
     for m in SENTENCE.finditer(text):
         s, e = m.start(), m.end()
